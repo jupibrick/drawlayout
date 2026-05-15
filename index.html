@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Kastindeling PWA</title>
+
+<style>
+
+*{
+  box-sizing:border-box;
+}
+
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#0f172a;
+  color:white;
+}
+
+header{
+  padding:15px;
+  background:#111827;
+  position:sticky;
+  top:0;
+  z-index:100;
+}
+
+h1{
+  margin:0 0 15px;
+}
+
+.controls{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+button,
+select{
+  border:none;
+  border-radius:10px;
+  padding:10px;
+  background:#1e293b;
+  color:white;
+}
+
+.tabs{
+  display:flex;
+  overflow-x:auto;
+  gap:10px;
+  padding:15px;
+}
+
+.tab{
+  background:#1e293b;
+  padding:10px 15px;
+  border-radius:10px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+
+.tab.active{
+  background:#3b82f6;
+}
+
+.kast{
+  display:none;
+  padding:15px;
+}
+
+.kast.active{
+  display:block;
+}
+
+.lade{
+  background:#111827;
+  padding:12px;
+  border-radius:12px;
+  margin-bottom:10px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.ladeNummer{
+  min-width:40px;
+  font-weight:bold;
+}
+
+.vakken{
+  display:flex;
+  gap:5px;
+}
+
+.vakje{
+  height:40px;
+  border-radius:8px;
+  background:white;
+  border:2px solid rgba(255,255,255,0.2);
+  cursor:pointer;
+}
+
+.notitie{
+  flex:1;
+  min-width:150px;
+  padding:8px;
+  border:none;
+  border-radius:8px;
+  background:#1e293b;
+  color:white;
+}
+
+.overzichtBlok{
+  background:#111827;
+  padding:15px;
+  border-radius:12px;
+  margin-bottom:15px;
+}
+
+@media(max-width:700px){
+
+  .lade{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .notitie{
+    width:100%;
+  }
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+
+<h1>📦 Kastindeling</h1>
+
+<div class="controls">
+
+<button id="addKastBtn">➕ Nieuwe kast</button>
+
+<button id="deleteKastBtn">🗑 Kast verwijderen</button>
+
+<button id="editBtn">🖉 Laden aanpassen</button>
+
+<select id="colorSelect">
+  <option value="red">🔴 Bezet</option>
+  <option value="green">🟢 Open</option>
+  <option value="blue">🔵 Gereserveerd</option>
+</select>
+
+<button id="applyBtn">🎨 Hele kast</button>
+
+<button id="resetBtn">🧹 Reset</button>
+
+</div>
+
+</header>
+
+<div class="tabs" id="tabs"></div>
+
+<div id="kastenContainer"></div>
+
+<script>
+
+const kleuren = {
+  red:'#ef4444',
+  green:'#22c55e',
+  blue:'#3b82f6'
+};
+
+const kleurVolgorde = ['red','green','blue'];
+
+let activeKast = -1;
+
+let config = JSON.parse(localStorage.getItem('config')) || [
+  {
+    name:'Kast 1',
+    drawers:20,
+    compartments:3
+  }
+];
+
+let data = JSON.parse(localStorage.getItem('data')) || {};
+
+function saveData(){
+
+  localStorage.setItem(
+    'config',
+    JSON.stringify(config)
+  );
+
+  localStorage.setItem(
+    'data',
+    JSON.stringify(data)
+  );
+}
+
+function renderTabs(){
+
+  const tabs = document.getElementById('tabs');
+
+  tabs.innerHTML = '';
+
+  const overzichtTab = document.createElement('div');
+
+  overzichtTab.className =
+    'tab' + (activeKast === -1 ? ' active' : '');
+
+  overzichtTab.innerText = '🟢 Open plekken';
+
+  overzichtTab.onclick = () => {
+
+    activeKast = -1;
+
+    renderTabs();
+    renderKasten();
+  };
+
+  tabs.appendChild(overzichtTab);
+
+  config.forEach((kast,index)=>{
+
+    const tab = document.createElement('div');
+
+    tab.className =
+      'tab' + (activeKast === index ? ' active' : '');
+
+    tab.innerText = kast.name;
+
+    tab.onclick = ()=>{
+
+      activeKast = index;
+
+      renderTabs();
+      renderKasten();
+    };
+
+    tabs.appendChild(tab);
+  });
+}
+
+function renderKasten(){
+
+  const container =
+    document.getElementById('kastenContainer');
+
+  container.innerHTML = '';
+
+  if(activeKast === -1){
+
+    renderOpenPlekken(container);
+
+    return;
+  }
+
+  const kast = config[activeKast];
+
+  const kastDiv = document.createElement('div');
+
+  kastDiv.className = 'kast active';
+
+  for(let i=1;i<=kast.drawers;i++){
+
+    const lade = document.createElement('div');
+
+    lade.className = 'lade';
+
+    const nummer = document.createElement('div');
+
+    nummer.className = 'ladeNummer';
+
+    nummer.innerText = i;
+
+    lade.appendChild(nummer);
+
+    /* Layout keuze */
+
+    const layoutKey =
+      `${kast.name}_${i}_layout`;
+
+    const layoutSelect =
+      document.createElement('select');
+
+    layoutSelect.innerHTML = `
+      <option value="1">1 vak</option>
+      <option value="2">2 vakken</option>
+      <option value="3">3 vakken</option>
+    `;
+
+    layoutSelect.value =
+      data[layoutKey] || 3;
+
+    layoutSelect.onchange = ()=>{
+
+      data[layoutKey] =
+        parseInt(layoutSelect.value);
+
+      saveData();
+
+      renderKasten();
+    };
+
+    lade.appendChild(layoutSelect);
+
+    const vakken = document.createElement('div');
+
+    vakken.className = 'vakken';
+
+    const layout =
+      data[layoutKey] || 3;
+
+    for(let j=0;j<layout;j++){
+
+      const vak = document.createElement('div');
+
+      vak.className = 'vakje';
+
+      if(layout === 1){
+        vak.style.width = '180px';
+      }
+
+      if(layout === 2){
+        vak.style.width = '90px';
+      }
+
+      if(layout === 3){
+        vak.style.width = '55px';
+      }
+
+      const key =
+        `${kast.name}_${i}_${j}`;
+
+      vak.style.background =
+        data[key]?.color || 'white';
+
+      vak.onclick = ()=>{
+
+        let index =
+          data[key]?.colorIndex ?? -1;
+
+        index =
+          (index + 1) %
+          kleurVolgorde.length;
+
+        const kleurNaam =
+          kleurVolgorde[index];
+
+        vak.style.background =
+          kleuren[kleurNaam];
+
+        data[key] = {
+          color: kleuren[kleurNaam],
+          colorIndex:index
+        };
+
+        saveData();
+      };
+
+      vakken.appendChild(vak);
+    }
+
+    lade.appendChild(vakken);
+
+    const note =
+      document.createElement('input');
+
+    note.className = 'notitie';
+
+    note.placeholder = 'Notitie...';
+
+    const noteKey =
+      `${kast.name}_${i}_note`;
+
+    note.value =
+      data[noteKey] || '';
+
+    note.oninput = ()=>{
+
+      data[noteKey] = note.value;
+
+      saveData();
+    };
+
+    lade.appendChild(note);
+
+    kastDiv.appendChild(lade);
+  }
+
+  container.appendChild(kastDiv);
+}
+
+function renderOpenPlekken(container){
+
+  const title = document.createElement('h2');
+
+  title.innerText = '🟢 Open plekken overzicht';
+
+  container.appendChild(title);
+
+  config.forEach(kast=>{
+
+    const blok = document.createElement('div');
+
+    blok.className = 'overzichtBlok';
+
+    const naam = document.createElement('h3');
+
+    naam.innerText = kast.name;
+
+    blok.appendChild(naam);
+
+    let gevonden = false;
+
+    for(let i=1;i<=kast.drawers;i++){
+
+      const layout =
+        data[`${kast.name}_${i}_layout`] || 3;
+
+      for(let j=0;j<layout;j++){
+
+        const key =
+          `${kast.name}_${i}_${j}`;
+
+        if(data[key]?.color === kleuren.green){
+
+          gevonden = true;
+
+          const regel =
+            document.createElement('div');
+
+          regel.innerText =
+            `La ${i} - Vak ${j+1}`;
+
+          blok.appendChild(regel);
+        }
+      }
+    }
+
+    if(!gevonden){
+
+      const leeg =
+        document.createElement('div');
+
+      leeg.innerText =
+        'Geen open plekken';
+
+      blok.appendChild(leeg);
+    }
+
+    container.appendChild(blok);
+  });
+}
+
+/* Nieuwe kast */
+
+document.getElementById(
+  'addKastBtn'
+).onclick = ()=>{
+
+  const name =
+    prompt('Naam kast');
+
+  if(!name) return;
+
+  const drawers =
+    parseInt(prompt(
+      'Aantal laden',
+      '20'
+    )) || 20;
+
+  config.push({
+    name,
+    drawers,
+    compartments:3
+  });
+
+  activeKast =
+    config.length - 1;
+
+  saveData();
+
+  renderTabs();
+  renderKasten();
+};
+
+/* Kast verwijderen */
+
+document.getElementById(
+  'deleteKastBtn'
+).onclick = ()=>{
+
+  if(activeKast === -1) return;
+
+  const kast =
+    config[activeKast];
+
+  if(!confirm(
+    `Verwijder ${kast.name}?`
+  )) return;
+
+  Object.keys(data).forEach(key=>{
+
+    if(key.startsWith(kast.name+'_')){
+      delete data[key];
+    }
+  });
+
+  config.splice(activeKast,1);
+
+  activeKast = -1;
+
+  saveData();
+
+  renderTabs();
+  renderKasten();
+};
+
+/* Laden aanpassen */
+
+document.getElementById(
+  'editBtn'
+).onclick = ()=>{
+
+  if(activeKast === -1) return;
+
+  const kast =
+    config[activeKast];
+
+  const aantal =
+    parseInt(prompt(
+      'Aantal laden',
+      kast.drawers
+    ));
+
+  if(isNaN(aantal)) return;
+
+  kast.drawers = aantal;
+
+  saveData();
+
+  renderKasten();
+};
+
+/* Hele kast kleuren */
+
+document.getElementById(
+  'applyBtn'
+).onclick = ()=>{
+
+  if(activeKast === -1) return;
+
+  const kast =
+    config[activeKast];
+
+  const kleurNaam =
+    document.getElementById(
+      'colorSelect'
+    ).value;
+
+  for(let i=1;i<=kast.drawers;i++){
+
+    const layout =
+      data[`${kast.name}_${i}_layout`] || 3;
+
+    for(let j=0;j<layout;j++){
+
+      const key =
+        `${kast.name}_${i}_${j}`;
+
+      data[key] = {
+        color: kleuren[kleurNaam],
+        colorIndex:
+          kleurVolgorde.indexOf(
+            kleurNaam
+          )
+      };
+    }
+  }
+
+  saveData();
+
+  renderKasten();
+};
+
+/* Reset */
+
+document.getElementById(
+  'resetBtn'
+).onclick = ()=>{
+
+  if(activeKast === -1) return;
+
+  const kast =
+    config[activeKast];
+
+  if(!confirm(
+    `Reset ${kast.name}?`
+  )) return;
+
+  Object.keys(data).forEach(key=>{
+
+    if(key.startsWith(kast.name+'_')){
+      delete data[key];
+    }
+  });
+
+  saveData();
+
+  renderKasten();
+};
+
+renderTabs();
+renderKasten();
+
+</script>
+
+</body>
+</html>
+
+
+
+v0.05
