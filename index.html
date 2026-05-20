@@ -1,15 +1,15 @@
-HTML
-
-<script
-  src=hhtps://cdn.jsdelivr.net/npm@supabse-js"></script>
-
 <!DOCTYPE html>
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Kastindeling PWA</title>
+<title>Kastindeling</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
 
 <style>
 
@@ -25,11 +25,12 @@ body{
 }
 
 header{
-  padding:15px;
-  background:#111827;
   position:sticky;
   top:0;
   z-index:100;
+  background:#111827;
+  padding:15px;
+  box-shadow:0 2px 10px rgba(0,0,0,0.4);
 }
 
 h1{
@@ -62,21 +63,16 @@ select{
   background:#1e293b;
   padding:10px 15px;
   border-radius:10px;
-  cursor:pointer;
   white-space:nowrap;
+  cursor:pointer;
 }
 
 .tab.active{
   background:#3b82f6;
 }
 
-.kast{
-  display:none;
+.page{
   padding:15px;
-}
-
-.kast.active{
-  display:block;
 }
 
 .lade{
@@ -104,7 +100,6 @@ select{
   height:40px;
   border-radius:8px;
   background:white;
-  border:2px solid rgba(255,255,255,0.2);
   cursor:pointer;
 }
 
@@ -120,8 +115,8 @@ select{
 
 .overzichtBlok{
   background:#111827;
-  padding:15px;
   border-radius:12px;
+  padding:15px;
   margin-bottom:15px;
 }
 
@@ -148,6 +143,10 @@ select{
 
 <div class="controls">
 
+<button id="loginBtn">🔐 Login</button>
+
+<button id="registerBtn">👤 Registreren</button>
+
 <button id="addKastBtn">➕ Nieuwe kast</button>
 
 <button id="deleteKastBtn">🗑 Kast verwijderen</button>
@@ -170,9 +169,21 @@ select{
 
 <div class="tabs" id="tabs"></div>
 
-<div id="kastenContainer"></div>
+<div class="page" id="page"></div>
 
 <script>
+
+/* Supabase */
+
+const supabaseUrl = 'https://ezbvvxbtvzppngsgdewc.supabase.co/rest/v1/';
+const supabaseKey = 'sb_publishable_wmZ4lFUMfSm6gdh-o-l7eg_1mBOSC6S';
+
+const supabase = window.supabase.createClient(
+  supabaseUrl,
+  supabaseKey
+);
+
+/* Kleuren */
 
 const kleuren = {
   red:'#ef4444',
@@ -181,6 +192,8 @@ const kleuren = {
 };
 
 const kleurVolgorde = ['red','green','blue'];
+
+/* Data */
 
 let activeKast = -1;
 
@@ -194,7 +207,9 @@ let config = JSON.parse(localStorage.getItem('config')) || [
 
 let data = JSON.parse(localStorage.getItem('data')) || {};
 
-function saveData(){
+/* Opslaan */
+
+async function saveData(){
 
   localStorage.setItem(
     'config',
@@ -205,7 +220,100 @@ function saveData(){
     'data',
     JSON.stringify(data)
   );
+
+  const user =
+    (await supabase.auth.getUser())
+    .data.user;
+
+  if(!user) return;
+
+  await supabase
+    .from('appdata')
+    .upsert({
+      id:user.id,
+      data:{
+        config,
+        data
+      }
+    });
 }
+
+/* Cloud laden */
+
+async function loadCloudData(){
+
+  const user =
+    (await supabase.auth.getUser())
+    .data.user;
+
+  if(!user) return;
+
+  const { data:row } =
+    await supabase
+      .from('appdata')
+      .select('*')
+      .eq('id',user.id)
+      .single();
+
+  if(row?.data){
+
+    config = row.data.config || config;
+
+    data = row.data.data || data;
+
+    render();
+  }
+}
+
+/* Login */
+
+async function login(){
+
+  const email = prompt('Email');
+  const password = prompt('Wachtwoord');
+
+  if(!email || !password) return;
+
+  const { error } =
+    await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+  if(error){
+    alert(error.message);
+    return;
+  }
+
+  await loadCloudData();
+
+  alert('Ingelogd');
+}
+
+/* Registreren */
+
+async function register(){
+
+  const email = prompt('Email');
+  const password = prompt('Wachtwoord');
+
+  if(!email || !password) return;
+
+  const { error } =
+    await supabase.auth.signUp({
+      email,
+      password
+    });
+
+  if(error){
+    alert(error.message);
+    return;
+  }
+
+  alert('Account aangemaakt');
+}
+
+/* Tabs */
 
 function renderTabs(){
 
@@ -220,12 +328,11 @@ function renderTabs(){
 
   overzichtTab.innerText = '🟢 Open plekken';
 
-  overzichtTab.onclick = () => {
+  overzichtTab.onclick = ()=>{
 
     activeKast = -1;
 
-    renderTabs();
-    renderKasten();
+    render();
   };
 
   tabs.appendChild(overzichtTab);
@@ -243,171 +350,22 @@ function renderTabs(){
 
       activeKast = index;
 
-      renderTabs();
-      renderKasten();
+      render();
     };
 
     tabs.appendChild(tab);
   });
 }
 
-function renderKasten(){
+/* Open plekken */
 
-  const container =
-    document.getElementById('kastenContainer');
-
-  container.innerHTML = '';
-
-  if(activeKast === -1){
-
-    renderOpenPlekken(container);
-
-    return;
-  }
-
-  const kast = config[activeKast];
-
-  const kastDiv = document.createElement('div');
-
-  kastDiv.className = 'kast active';
-
-  for(let i=1;i<=kast.drawers;i++){
-
-    const lade = document.createElement('div');
-
-    lade.className = 'lade';
-
-    const nummer = document.createElement('div');
-
-    nummer.className = 'ladeNummer';
-
-    nummer.innerText = i;
-
-    lade.appendChild(nummer);
-
-    /* Layout keuze */
-
-    const layoutKey =
-      `${kast.name}_${i}_layout`;
-
-    const layoutSelect =
-      document.createElement('select');
-
-    layoutSelect.innerHTML = `
-      <option value="1">1 vak</option>
-      <option value="2">2 vakken</option>
-      <option value="3">3 vakken</option>
-    `;
-
-    layoutSelect.value =
-      data[layoutKey] || 3;
-
-    layoutSelect.onchange = ()=>{
-
-      data[layoutKey] =
-        parseInt(layoutSelect.value);
-
-      saveData();
-
-      renderKasten();
-    };
-
-    lade.appendChild(layoutSelect);
-
-    const vakken = document.createElement('div');
-
-    vakken.className = 'vakken';
-
-    const layout =
-      data[layoutKey] || 3;
-
-    for(let j=0;j<layout;j++){
-
-      const vak = document.createElement('div');
-
-      vak.className = 'vakje';
-
-      if(layout === 1){
-        vak.style.width = '180px';
-      }
-
-      if(layout === 2){
-        vak.style.width = '90px';
-      }
-
-      if(layout === 3){
-        vak.style.width = '55px';
-      }
-
-      const key =
-        `${kast.name}_${i}_${j}`;
-
-      vak.style.background =
-        data[key]?.color || 'white';
-
-      vak.onclick = ()=>{
-
-        let index =
-          data[key]?.colorIndex ?? -1;
-
-        index =
-          (index + 1) %
-          kleurVolgorde.length;
-
-        const kleurNaam =
-          kleurVolgorde[index];
-
-        vak.style.background =
-          kleuren[kleurNaam];
-
-        data[key] = {
-          color: kleuren[kleurNaam],
-          colorIndex:index
-        };
-
-        saveData();
-      };
-
-      vakken.appendChild(vak);
-    }
-
-    lade.appendChild(vakken);
-
-    const note =
-      document.createElement('input');
-
-    note.className = 'notitie';
-
-    note.placeholder = 'Notitie...';
-
-    const noteKey =
-      `${kast.name}_${i}_note`;
-
-    note.value =
-      data[noteKey] || '';
-
-    note.oninput = ()=>{
-
-      data[noteKey] = note.value;
-
-      saveData();
-    };
-
-    lade.appendChild(note);
-
-    kastDiv.appendChild(lade);
-  }
-
-  container.appendChild(kastDiv);
-}
-
-function renderOpenPlekken(container){
+function renderOpenPlekken(page){
 
   const title = document.createElement('h2');
 
-  title.innerText = '🟢 Open plekken overzicht';
+  title.innerText = '🟢 Open plekken';
 
-  container.appendChild(title);
+  page.appendChild(title);
 
   config.forEach(kast=>{
 
@@ -437,8 +395,7 @@ function renderOpenPlekken(container){
 
           gevonden = true;
 
-          const regel =
-            document.createElement('div');
+          const regel = document.createElement('div');
 
           regel.innerText =
             `La ${i} - Vak ${j+1}`;
@@ -450,35 +407,187 @@ function renderOpenPlekken(container){
 
     if(!gevonden){
 
-      const leeg =
-        document.createElement('div');
+      const leeg = document.createElement('div');
 
-      leeg.innerText =
-        'Geen open plekken';
+      leeg.innerText = 'Geen open plekken';
 
       blok.appendChild(leeg);
     }
 
-    container.appendChild(blok);
+    page.appendChild(blok);
   });
 }
 
+/* Kast renderen */
+
+function renderKast(page){
+
+  const kast = config[activeKast];
+
+  if(!kast) return;
+
+  for(let i=1;i<=kast.drawers;i++){
+
+    const lade = document.createElement('div');
+
+    lade.className = 'lade';
+
+    const nummer = document.createElement('div');
+
+    nummer.className = 'ladeNummer';
+
+    nummer.innerText = i;
+
+    lade.appendChild(nummer);
+
+    /* Layout */
+
+    const layoutKey =
+      `${kast.name}_${i}_layout`;
+
+    const layout =
+      data[layoutKey] || 3;
+
+    const layoutSelect =
+      document.createElement('select');
+
+    layoutSelect.innerHTML = `
+      <option value="1">1 vak</option>
+      <option value="2">2 vakken</option>
+      <option value="3">3 vakken</option>
+    `;
+
+    layoutSelect.value = layout;
+
+    layoutSelect.onchange = async ()=>{
+
+      data[layoutKey] =
+        parseInt(layoutSelect.value);
+
+      await saveData();
+
+      render();
+    };
+
+    lade.appendChild(layoutSelect);
+
+    /* Vakjes */
+
+    const vakken = document.createElement('div');
+
+    vakken.className = 'vakken';
+
+    for(let j=0;j<layout;j++){
+
+      const vak = document.createElement('div');
+
+      vak.className = 'vakje';
+
+      if(layout === 1){
+        vak.style.width = '180px';
+      }
+
+      if(layout === 2){
+        vak.style.width = '90px';
+      }
+
+      if(layout === 3){
+        vak.style.width = '55px';
+      }
+
+      const key =
+        `${kast.name}_${i}_${j}`;
+
+      vak.style.background =
+        data[key]?.color || 'white';
+
+      vak.onclick = async ()=>{
+
+        let index =
+          data[key]?.colorIndex ?? -1;
+
+        index =
+          (index + 1) % kleurVolgorde.length;
+
+        const kleurNaam =
+          kleurVolgorde[index];
+
+        data[key] = {
+          color: kleuren[kleurNaam],
+          colorIndex:index
+        };
+
+        await saveData();
+
+        render();
+      };
+
+      vakken.appendChild(vak);
+    }
+
+    lade.appendChild(vakken);
+
+    /* Notitie */
+
+    const note = document.createElement('input');
+
+    note.className = 'notitie';
+
+    note.placeholder = 'Notitie...';
+
+    const noteKey =
+      `${kast.name}_${i}_note`;
+
+    note.value = data[noteKey] || '';
+
+    note.oninput = async ()=>{
+
+      data[noteKey] = note.value;
+
+      await saveData();
+    };
+
+    lade.appendChild(note);
+
+    page.appendChild(lade);
+  }
+}
+
+/* Render */
+
+function render(){
+
+  renderTabs();
+
+  const page = document.getElementById('page');
+
+  page.innerHTML = '';
+
+  if(activeKast === -1){
+    renderOpenPlekken(page);
+  }
+
+  else {
+    renderKast(page);
+  }
+}
+
+/* Buttons */
+
+document.getElementById('loginBtn').onclick = login;
+
+document.getElementById('registerBtn').onclick = register;
+
 /* Nieuwe kast */
 
-document.getElementById(
-  'addKastBtn'
-).onclick = ()=>{
+document.getElementById('addKastBtn').onclick = async ()=>{
 
-  const name =
-    prompt('Naam kast');
+  const name = prompt('Naam kast');
 
   if(!name) return;
 
   const drawers =
-    parseInt(prompt(
-      'Aantal laden',
-      '20'
-    )) || 20;
+    parseInt(prompt('Aantal laden','20')) || 20;
 
   config.push({
     name,
@@ -486,33 +595,26 @@ document.getElementById(
     compartments:3
   });
 
-  activeKast =
-    config.length - 1;
+  activeKast = config.length - 1;
 
-  saveData();
+  await saveData();
 
-  renderTabs();
-  renderKasten();
+  render();
 };
 
 /* Kast verwijderen */
 
-document.getElementById(
-  'deleteKastBtn'
-).onclick = ()=>{
+document.getElementById('deleteKastBtn').onclick = async ()=>{
 
   if(activeKast === -1) return;
 
-  const kast =
-    config[activeKast];
+  const kast = config[activeKast];
 
-  if(!confirm(
-    `Verwijder ${kast.name}?`
-  )) return;
+  if(!confirm(`Verwijder ${kast.name}?`)) return;
 
   Object.keys(data).forEach(key=>{
 
-    if(key.startsWith(kast.name+'_')){
+    if(key.startsWith(kast.name + '_')){
       delete data[key];
     }
   });
@@ -521,22 +623,18 @@ document.getElementById(
 
   activeKast = -1;
 
-  saveData();
+  await saveData();
 
-  renderTabs();
-  renderKasten();
+  render();
 };
 
 /* Laden aanpassen */
 
-document.getElementById(
-  'editBtn'
-).onclick = ()=>{
+document.getElementById('editBtn').onclick = async ()=>{
 
   if(activeKast === -1) return;
 
-  const kast =
-    config[activeKast];
+  const kast = config[activeKast];
 
   const aantal =
     parseInt(prompt(
@@ -548,26 +646,21 @@ document.getElementById(
 
   kast.drawers = aantal;
 
-  saveData();
+  await saveData();
 
-  renderKasten();
+  render();
 };
 
 /* Hele kast kleuren */
 
-document.getElementById(
-  'applyBtn'
-).onclick = ()=>{
+document.getElementById('applyBtn').onclick = async ()=>{
 
   if(activeKast === -1) return;
 
-  const kast =
-    config[activeKast];
+  const kast = config[activeKast];
 
   const kleurNaam =
-    document.getElementById(
-      'colorSelect'
-    ).value;
+    document.getElementById('colorSelect').value;
 
   for(let i=1;i<=kast.drawers;i++){
 
@@ -582,53 +675,52 @@ document.getElementById(
       data[key] = {
         color: kleuren[kleurNaam],
         colorIndex:
-          kleurVolgorde.indexOf(
-            kleurNaam
-          )
+          kleurVolgorde.indexOf(kleurNaam)
       };
     }
   }
 
-  saveData();
+  await saveData();
 
-  renderKasten();
+  render();
 };
 
 /* Reset */
 
-document.getElementById(
-  'resetBtn'
-).onclick = ()=>{
+document.getElementById('resetBtn').onclick = async ()=>{
 
   if(activeKast === -1) return;
 
-  const kast =
-    config[activeKast];
+  const kast = config[activeKast];
 
-  if(!confirm(
-    `Reset ${kast.name}?`
-  )) return;
+  if(!confirm(`Reset ${kast.name}?`)) return;
 
   Object.keys(data).forEach(key=>{
 
-    if(key.startsWith(kast.name+'_')){
+    if(key.startsWith(kast.name + '_')){
       delete data[key];
     }
   });
 
-  saveData();
+  await saveData();
 
-  renderKasten();
+  render();
 };
 
-renderTabs();
-renderKasten();
+/* Service worker */
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('service-worker.js');
+}
+
+/* Start */
+
+render();
+loadCloudData();
 
 </script>
 
 </body>
 </html>
 
-
-
-v0.05
+Verzonden vanaf Outlook voor Android
